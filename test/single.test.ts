@@ -7,7 +7,7 @@ const cwd = Deno.cwd();
 const TEST_FIXTURE = "test/single-fixture";
 Deno.test("run", async () => {
   cd(join(cwd, TEST_FIXTURE));
-  const out = await $`deno run -A ../../wsr.ts test`.quiet();
+  const out = await $`deno run -A ../../wsr.ts test -r`.quiet();
   assertEquals(
     out.stderr.trim(),
     `$ cd /Users/kotaro.chikuba/mizchi/wsr/test/single-fixture

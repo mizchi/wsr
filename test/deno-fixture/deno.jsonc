@@ -1,5 +1,6 @@
 {
   "tasks": {
+    "dup": "echo dup",
     "test": "echo root"
   }
 }

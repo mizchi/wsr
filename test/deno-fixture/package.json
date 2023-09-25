@@ -1,0 +1,7 @@
+{
+  "name": "node-root",
+  "scripts": {
+    "dup": "echo dup",
+    "testx": "echo npm-with-deno"
+  }
+}
