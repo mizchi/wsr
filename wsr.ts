@@ -21,7 +21,7 @@ type Context = {
 const HELP = `
 npm-scripts runner for monorepo
 
-Usage: wsr [module] [cmd]
+Usage: wsr <module> <cmd>
 
 Examples:
   $ wsr @pkg/foo test # run script in @pkg/foo
@@ -29,7 +29,8 @@ Examples:
   $ wsr foo           # list scripts in packages/foo
     foo [@pkg/foo] <root>/packages/foo
       test $ vitest --run src
-
+  $ wsr echo -- a b c # passing args to script
+  
   $ wsr packages/foo test         # run script in packages/foo
   $ cd packages && wsr ./foo test # run script in relative target
 
@@ -359,6 +360,7 @@ function printModuleScripts(
 // ======== run =========
 {
   const args = parse(Deno.args);
+
   if (args.help || args.h) {
     console.log(HELP);
     Deno.exit(0);
@@ -442,15 +444,19 @@ function printModuleScripts(
       Deno.exit(1);
     }
 
+    const passingSplitter = Deno.args.findIndex((arg) => arg === "--");
+    const passingArgs =
+      passingSplitter > -1 ? Deno.args.slice(passingSplitter + 1) : [];
+
     if (mod.npmScripts?.[cmd]) {
       const npmClient = await getPackageManager(root);
       cd(mod.path);
-      const out = await $`${npmClient} run ${cmd}`;
+      const out = await $`${npmClient} run ${cmd} ${passingArgs}`;
       Deno.exit(out.exitCode ?? 0);
     }
     if (mod.denoTasks?.[cmd]) {
       cd(mod.path);
-      const out = await $`deno task ${cmd}`;
+      const out = await $`deno task ${cmd} ${passingArgs}`;
       Deno.exit(out.exitCode ?? 0);
     }
     console.error(chalk.red(`[wsr:err] task not found ${cmd}`));

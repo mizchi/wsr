@@ -17,7 +17,7 @@ Deno.test("run", async () => {
   assertEquals(
     normalize(out.stderr),
     `$ cd <PROJ>/test/single-fixture
-$ npm run test
+$ npm run test 
 
 > test
 > echo 1

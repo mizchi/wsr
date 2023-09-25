@@ -58,7 +58,7 @@ Deno.test("run child task", async () => {
   assertEquals(
     normalize(out.stderr),
     `$ cd <PROJ>/test/pnpm-fixture/packages/foo
-$ pnpm run test
+$ pnpm run test 
 
 > @pkg/foo@ test <PROJ>/test/pnpm-fixture/packages/foo
 > exit 0`,
@@ -71,7 +71,7 @@ Deno.test("run child task from intermediate", async () => {
   assertEquals(
     normalize(out.stderr),
     `$ cd <PROJ>/test/pnpm-fixture/packages/foo
-$ pnpm run test
+$ pnpm run test 
 
 > @pkg/foo@ test <PROJ>/test/pnpm-fixture/packages/foo
 > exit 0`,
@@ -84,7 +84,7 @@ Deno.test("relative target", async () => {
   assertEquals(
     normalize(out.stderr),
     `$ cd <PROJ>/test/pnpm-fixture/packages/bar
-$ pnpm run test
+$ pnpm run test 
 
 > @pkg/bar@ test <PROJ>/test/pnpm-fixture/packages/bar
 > exit 0`,
@@ -97,7 +97,7 @@ Deno.test("run child task from module", async () => {
   assertEquals(
     normalize(out.stderr),
     `$ cd <PROJ>/test/pnpm-fixture/packages/foo
-$ pnpm run test
+$ pnpm run test 
 
 > @pkg/foo@ test <PROJ>/test/pnpm-fixture/packages/foo
 > exit 0`,
@@ -110,7 +110,7 @@ Deno.test("run other task from module", async () => {
   assertEquals(
     normalize(out.stderr),
     `$ cd <PROJ>/test/pnpm-fixture/packages/bar
-$ pnpm run test
+$ pnpm run test 
 
 > @pkg/bar@ test <PROJ>/test/pnpm-fixture/packages/bar
 > exit 0`,
@@ -123,7 +123,7 @@ Deno.test("run self task from module", async () => {
   assertEquals(
     normalize(out.stderr),
     `$ cd <PROJ>/test/pnpm-fixture/packages/foo
-$ pnpm run test
+$ pnpm run test 
 
 > @pkg/foo@ test <PROJ>/test/pnpm-fixture/packages/foo
 > exit 0`,
@@ -137,7 +137,7 @@ Deno.test("run root task from module", async () => {
   assertEquals(
     normalize(out.stderr),
     `$ cd <PROJ>/test/pnpm-fixture
-$ pnpm run test
+$ pnpm run test 
 
 > example@1.0.0 test <PROJ>/test/pnpm-fixture
 > pnpm test:foo && pnpm test:bar
