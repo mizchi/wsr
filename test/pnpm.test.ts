@@ -6,9 +6,16 @@ const cwd = Deno.cwd();
 
 const FIXTURE_DIR = "test/pnpm-fixture";
 
+const WSR = join(cwd, "wsr.ts");
+
+function normalize(str: string) {
+  // console.log("[norm]", cwd, str.replaceAll(cwd, "<proj>"));
+  return str.replaceAll(cwd, "<PROJ>").trim();
+}
+
 Deno.test("list all tasks", async () => {
   cd(join(cwd, FIXTURE_DIR));
-  const out = await $`deno run -A ../../wsr.ts`.quiet();
+  const out = await $`deno run -A ${WSR}`.quiet();
   assertEquals(
     out.stdout.trim(),
     `📦 bar [@pkg/bar] <root>/packages/bar
@@ -25,7 +32,7 @@ Deno.test("list all tasks", async () => {
 Deno.test("list root tasks", async () => {
   cd(join(cwd, FIXTURE_DIR));
 
-  const out = await $`deno run -A ../../wsr.ts root`.quiet();
+  const out = await $`deno run -A ${WSR} root`.quiet();
   assertEquals(
     out.stdout.trim(),
     `📦 root [example] <root>/
@@ -38,7 +45,7 @@ Deno.test("list root tasks", async () => {
 Deno.test("list module tasks", async () => {
   cd(join(cwd, FIXTURE_DIR));
 
-  const out = await $`deno run -A ../../wsr.ts foo`.quiet();
+  const out = await $`deno run -A ${WSR} foo`.quiet();
   assertEquals(
     out.stdout.trim(),
     `📦 foo [@pkg/foo] <root>/packages/foo
@@ -48,108 +55,108 @@ Deno.test("list module tasks", async () => {
 
 Deno.test("run child task", async () => {
   cd(join(cwd, FIXTURE_DIR));
-  const out = await $`deno run -A ../../wsr.ts foo test`.quiet();
+  const out = await $`deno run -A ${WSR} foo test`.quiet();
   assertEquals(
-    out.stderr.trim(),
-    `$ cd /Users/kotaro.chikuba/mizchi/wsr/test/pnpm-fixture/packages/foo
+    normalize(out.stderr),
+    `$ cd <PROJ>/test/pnpm-fixture/packages/foo
 $ pnpm run test
 
-> @pkg/foo@ test /Users/kotaro.chikuba/mizchi/wsr/test/pnpm-fixture/packages/foo
+> @pkg/foo@ test <PROJ>/test/pnpm-fixture/packages/foo
 > exit 0`,
   );
 });
 
 Deno.test("run child task from intermediate", async () => {
   cd(join(cwd, FIXTURE_DIR, "packages"));
-  const out = await $`deno run -A ../../../wsr.ts foo test`.quiet();
+  const out = await $`deno run -A ${WSR} foo test`.quiet();
   assertEquals(
-    out.stderr.trim(),
-    `$ cd /Users/kotaro.chikuba/mizchi/wsr/test/pnpm-fixture/packages/foo
+    normalize(out.stderr),
+    `$ cd <PROJ>/test/pnpm-fixture/packages/foo
 $ pnpm run test
 
-> @pkg/foo@ test /Users/kotaro.chikuba/mizchi/wsr/test/pnpm-fixture/packages/foo
+> @pkg/foo@ test <PROJ>/test/pnpm-fixture/packages/foo
 > exit 0`,
   );
 });
 
 Deno.test("relative target", async () => {
   cd(join(cwd, FIXTURE_DIR, "packages/foo"));
-  const out = await $`deno run -A ../../../../wsr.ts ../bar test`.quiet();
+  const out = await $`deno run -A ${WSR} ../bar test`.quiet();
   assertEquals(
-    out.stderr.trim(),
-    `$ cd /Users/kotaro.chikuba/mizchi/wsr/test/pnpm-fixture/packages/bar
+    normalize(out.stderr),
+    `$ cd <PROJ>/test/pnpm-fixture/packages/bar
 $ pnpm run test
 
-> @pkg/bar@ test /Users/kotaro.chikuba/mizchi/wsr/test/pnpm-fixture/packages/bar
+> @pkg/bar@ test <PROJ>/test/pnpm-fixture/packages/bar
 > exit 0`,
   );
 });
 
 Deno.test("run child task from module", async () => {
   cd(join(cwd, FIXTURE_DIR, "packages/foo"));
-  const out = await $`deno run -A ../../../../wsr.ts foo test`.quiet();
+  const out = await $`deno run -A ${WSR} foo test`.quiet();
   assertEquals(
-    out.stderr.trim(),
-    `$ cd /Users/kotaro.chikuba/mizchi/wsr/test/pnpm-fixture/packages/foo
+    normalize(out.stderr),
+    `$ cd <PROJ>/test/pnpm-fixture/packages/foo
 $ pnpm run test
 
-> @pkg/foo@ test /Users/kotaro.chikuba/mizchi/wsr/test/pnpm-fixture/packages/foo
+> @pkg/foo@ test <PROJ>/test/pnpm-fixture/packages/foo
 > exit 0`,
   );
 });
 
 Deno.test("run other task from module", async () => {
   cd(join(cwd, FIXTURE_DIR, "packages/foo"));
-  const out = await $`deno run -A ../../../../wsr.ts bar test`.quiet();
+  const out = await $`deno run -A ${WSR} bar test`.quiet();
   assertEquals(
-    out.stderr.trim(),
-    `$ cd /Users/kotaro.chikuba/mizchi/wsr/test/pnpm-fixture/packages/bar
+    normalize(out.stderr),
+    `$ cd <PROJ>/test/pnpm-fixture/packages/bar
 $ pnpm run test
 
-> @pkg/bar@ test /Users/kotaro.chikuba/mizchi/wsr/test/pnpm-fixture/packages/bar
+> @pkg/bar@ test <PROJ>/test/pnpm-fixture/packages/bar
 > exit 0`,
   );
 });
 
 Deno.test("run self task from module", async () => {
   cd(join(cwd, FIXTURE_DIR, "packages/foo"));
-  const out = await $`deno run -A ../../../../wsr.ts test`.quiet();
+  const out = await $`deno run -A ${WSR} test`.quiet();
   assertEquals(
-    out.stderr.trim(),
-    `$ cd /Users/kotaro.chikuba/mizchi/wsr/test/pnpm-fixture/packages/foo
+    normalize(out.stderr),
+    `$ cd <PROJ>/test/pnpm-fixture/packages/foo
 $ pnpm run test
 
-> @pkg/foo@ test /Users/kotaro.chikuba/mizchi/wsr/test/pnpm-fixture/packages/foo
+> @pkg/foo@ test <PROJ>/test/pnpm-fixture/packages/foo
 > exit 0`,
   );
 });
 
 Deno.test("run root task from module", async () => {
   cd(join(cwd, FIXTURE_DIR, "packages/foo"));
-  const out = await $`deno run -A ../../../../wsr.ts root test`.quiet();
-  console.log(out.stderr.trim());
+  const out = await $`deno run -A ${WSR} root test`.quiet();
+  console.log(normalize(out.stderr));
   assertEquals(
-    out.stderr.trim(),
-    `$ cd /Users/kotaro.chikuba/mizchi/wsr/test/pnpm-fixture
+    normalize(out.stderr),
+    `$ cd <PROJ>/test/pnpm-fixture
 $ pnpm run test
 
-> example@1.0.0 test /Users/kotaro.chikuba/mizchi/wsr/test/pnpm-fixture
+> example@1.0.0 test <PROJ>/test/pnpm-fixture
 > pnpm test:foo && pnpm test:bar
 
 
-> example@1.0.0 test:foo /Users/kotaro.chikuba/mizchi/wsr/test/pnpm-fixture
+> example@1.0.0 test:foo <PROJ>/test/pnpm-fixture
 > cd packages/foo && pnpm test
 
 
-> @pkg/foo@ test /Users/kotaro.chikuba/mizchi/wsr/test/pnpm-fixture/packages/foo
+> @pkg/foo@ test <PROJ>/test/pnpm-fixture/packages/foo
 > exit 0
 
 
-> example@1.0.0 test:bar /Users/kotaro.chikuba/mizchi/wsr/test/pnpm-fixture
+> example@1.0.0 test:bar <PROJ>/test/pnpm-fixture
 > cd packages/bar && pnpm test
 
 
-> @pkg/bar@ test /Users/kotaro.chikuba/mizchi/wsr/test/pnpm-fixture/packages/bar
+> @pkg/bar@ test <PROJ>/test/pnpm-fixture/packages/bar
 > exit 0`,
   );
 });

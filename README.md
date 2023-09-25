@@ -1,6 +1,6 @@
 # wsr
 
-npm scripts helper for workspace by deno.
+npm-scripts and deno-tasks runner for workspace
 
 ```bash
 deno install -A wsr.ts
@@ -79,15 +79,77 @@ $ npm run test
 > exit 0
 ```
 
+## Mixed Deno-Node support
+
+```bash
+$ ls --tree
+.
+├── deno.jsonc
+├── foo
+│  └── deno.jsonc
+└── package.json
+
+$ cat deno.jsonc  
+{
+  "tasks": {
+    "dup": "echo dup",
+    "test": "echo root"
+  }
+}
+$ cat package.json
+{
+  "name": "node-root",
+  "scripts": {
+    "dup": "echo dup",
+    "testx": "echo npm-with-deno"
+  }
+}
+
+$ wsr                      
+[Mixed] root [node-root] <root>/
+  🔥 dup   $ echo dup
+  📦 testx $ echo npm-with-deno
+  🔥 dup   $ echo dup
+  🦕 test  $ echo root
+🦕 foo <root>/foo
+  test  $ echo foo
+
+$ wsr foo test
+Task test echo foo
+foo
+
+$ wsr dup     
+[wsr:err] "dup" is duprecated in both deno.json(c) and package.json
+```
+
+Only support root side exec in deno module
+
+```bash
+# mod/deno.jsonc [test]
+# deno.jsonc [test, run]
+$ wsr ./mod test # ok
+$ cd mod && wsr root run # ng
+```
+
 ## How it works
 
 - use `packageManager` field in workspace-root's `package.json` to run `<npmClient> run ...`
 - require `workspaces` field in workspace-root's `package.json` or `pnpm-workspace.yaml`
+- glob `**/deno.json(c)`
 
 ## TODO
 
-- [ ] deno task support
+- [ ] deno root
 - [ ] Makefile support
+
+## Contirbute
+
+Pass test
+
+```
+$ deno task test
+$ deno install -A wsr.ts -f
+```
 
 ## LICENSE
 

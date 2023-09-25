@@ -5,9 +5,11 @@ import { join } from "https://deno.land/std@0.202.0/path/join.ts";
 const cwd = Deno.cwd();
 
 const TEST_FIXTURE = "test/npm-fixture";
-Deno.test("list all tasks", async () => {
+const WSR = join(cwd, "wsr.ts");
+
+Deno.test("list tasks", async () => {
   cd(join(cwd, TEST_FIXTURE));
-  const out = await $`deno run -A ../../wsr.ts`.quiet();
+  const out = await $`deno run -A ${WSR}`.quiet();
   assertEquals(
     out.stdout.trim(),
     `📦 bar [@pkg/bar] <root>/packages/bar

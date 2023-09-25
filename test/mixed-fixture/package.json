@@ -1,0 +1,8 @@
+{
+  "scripts": {
+    "test": "echo 1"
+  },
+  "workspaces": [
+    "packages/foo"
+  ]
+}

@@ -97,15 +97,16 @@ async function findContextModule(cwd: string): Promise<string | void> {
 }
 
 function findModuleWithCmd(
+  modules: ModuleInfo[],
   contextPath: string | void,
   cmd: string,
 ): Context | void {
-  const contextMod = moduleInfos.find((t) => t.path === contextPath);
+  const contextMod = modules.find((t) => t.path === contextPath);
   if (contextMod?.npmScripts?.[cmd] || contextMod?.denoTasks?.[cmd]) {
     return { mod: contextMod, cmd: cmd };
   }
 
-  const rootTask = moduleInfos.find((t) => t.root);
+  const rootTask = modules.find((t) => t.root);
   if (rootTask?.npmScripts?.[cmd] || rootTask?.denoTasks?.[cmd]) {
     return { mod: rootTask, cmd: cmd };
   }
@@ -240,7 +241,9 @@ async function getDenoModuleInfos(root: string, npmModuleInfos: ModuleInfo[]) {
   return infos.sort((a, b) => a.shortName.localeCompare(b.shortName));
 }
 
-async function getNpmModuleInfos(root: string, mods: string[]) {
+async function getNpmModuleInfos(root: string) {
+  const mods = await findNpmModules(root);
+
   const infos: ModuleInfo[] = [];
   for (const mod of mods) {
     const info: ModuleInfo = {
@@ -311,7 +314,7 @@ function printModuleScripts(
   // }
 
   // if (info.type === "mixed") {
-  const pkgPrefix = (info: ModuleInfo) =>
+  const pkgPrefix =
     info.npmScripts && info.denoTasks
       ? "[Mixed] "
       : info.npmScripts
@@ -340,11 +343,10 @@ function printModuleScripts(
       info.pkgName === info.shortName
         ? info.shortName
         : `${info.shortName}${info.pkgName ? ` [${info.pkgName}]` : ""}`;
-    console.log(`${pkgPrefix(info)}${pkgExpr} <root>/${relativePath}`);
-    // return;
+    console.log(`${pkgPrefix}${pkgExpr} <root>/${relativePath}`);
   } else {
     const relativePath = path.relative(root, info.path);
-    console.log(`${pkgPrefix(info)}${relativePath}`);
+    console.log(`${pkgPrefix}${relativePath}`);
   }
 
   // if (info.npmScripts) {
@@ -357,115 +359,120 @@ function printModuleScripts(
       `  ${cmdPrefix(info, name)}${name}${cmdSuffix(name)} $ ${cmd.trim()}`,
     );
   }
-  // }
-  // if (info.denoTasks) {
-  //   for (const [name, cmd] of Object.entries(info.denoTasks)) {
-  //     console.log(
-  //       `  ${cmdPrefix(info, name)}${name}${cmdSuffix(name)} $ ${cmd.trim()}`,
-  //     );
-  //   }
-  // }
-  // }
 }
 
 // ======== run =========
-
-const args = parse(Deno.args);
-if (args.help || args.h) {
-  console.log(HELP);
-  Deno.exit(0);
-}
-const expr = args._[0] as string | undefined;
-const root_ = await findWorkspaceRoot(Deno.cwd(), args.root ?? args.r ?? false);
-
-const context = await findContextModule(Deno.cwd());
-
-const root = (root_ ?? context) as string;
-
-if (!root) {
-  console.error("[wsr:err] module not found");
-  Deno.exit(1);
-}
-
-const mods = await findNpmModules(root);
-const npmModuleInfos = await getNpmModuleInfos(root, mods);
-
-const denoModuleInfos = await getDenoModuleInfos(root, npmModuleInfos);
-
-const moduleInfos: ModuleInfo[] = [...npmModuleInfos, ...denoModuleInfos];
-
-debug(`root = ${root.replace(Deno.env.get("HOME")!, "~")}`);
-if (root !== context) {
-  debug(`context = ${path.relative(root, context ?? "")}`);
-} else {
-  debug("context = .");
-}
-
-Deno.env.set("FORCE_COLOR", "1");
-
-if (expr) {
-  let mod = moduleInfos.find((t) => {
-    return (
-      (t.type === "mixed" && t.pkgName === expr) ||
-      // match tasks foo
-      t.shortName === expr ||
-      // match: tasks ./foo or ../foos
-      (expr.startsWith(".") && t.path === path.join(Deno.cwd(), expr)) ||
-      // match tasks foo
-      path.resolve(root, expr) === t.path
-    );
-  });
-
-  let cmd = args._[1] as string | undefined;
-  if (!mod) {
-    const ctx = findModuleWithCmd(context, expr);
-    if (!ctx) {
-      console.error(`[wsr:err] not found ${expr}`);
-      Deno.exit(1);
-    }
-    if (ctx.mod.type === "mixed") {
-      debug(`task = ${ctx.mod.pkgName ?? "<root>"}#${expr}`);
-    }
-
-    mod = ctx.mod;
-    cmd = ctx.cmd;
-  }
-
-  // print target tasks
-  if (!cmd) {
-    const isUniqueDirname =
-      moduleInfos.filter((t) => t.shortName === mod!.shortName).length === 1;
-    const longest = Object.keys(
-      (mod.type === "mixed" ? mod.npmScripts : mod.denoTasks) ?? [],
-    ).reduce((a, b) => (a.length > b.length ? a : b));
-    printModuleScripts(root, mod, isUniqueDirname, longest);
+{
+  const args = parse(Deno.args);
+  if (args.help || args.h) {
+    console.log(HELP);
     Deno.exit(0);
   }
+  const expr = args._[0] as string | undefined;
+  const root_ = await findWorkspaceRoot(
+    Deno.cwd(),
+    args.root ?? args.r ?? false,
+  );
 
-  if (mod.type === "mixed" && mod.npmScripts?.[cmd]) {
-    const npmClient = await getPackageManager(root);
-    cd(mod.path);
-    const out = await $`${npmClient} run ${cmd}`;
-    Deno.exit(out.exitCode ?? 0);
-  } else if (mod.type === "deno" && mod.denoTasks?.[cmd]) {
-    cd(mod.path);
-    const out = await $`deno task ${cmd}`;
-    Deno.exit(out.exitCode ?? 0);
-  } else {
-    console.error(`[wsr] task not found ${cmd}`);
+  const context = await findContextModule(Deno.cwd());
+
+  const root = (root_ ?? context) as string;
+
+  if (!root) {
+    console.error(chalk.red("[wsr:err] module not found"));
     Deno.exit(1);
   }
-} else {
-  const longest = moduleInfos
-    .flatMap((info) => [
-      ...Object.keys(info.npmScripts ?? []),
-      ...Object.keys(info.denoTasks ?? []),
-    ])
-    .reduce((a, b) => (a.length > b.length ? a : b));
-  // console.log(longest);
-  for (const task of moduleInfos) {
-    const isUnique =
-      moduleInfos.filter((t) => t.shortName === task.shortName).length === 1;
-    printModuleScripts(root, task, isUnique, longest);
+
+  const npmModules = await getNpmModuleInfos(root);
+  const denoModules = await getDenoModuleInfos(root, npmModules);
+  const modules: ModuleInfo[] = [...npmModules, ...denoModules];
+
+  debug(`root = ${root.replace(Deno.env.get("HOME")!, "~")}`);
+  if (root !== context) {
+    debug(`context = ${path.relative(root, context ?? "")}`);
+  } else {
+    debug("context = .");
+  }
+
+  if (!args.noColor) {
+    Deno.env.set("FORCE_COLOR", "1");
+  }
+
+  if (expr) {
+    let mod = modules.find((t) => {
+      return (
+        (t.type === "mixed" && t.pkgName === expr) ||
+        // match tasks foo
+        t.shortName === expr ||
+        // match: tasks ./foo or ../foos
+        (expr.startsWith(".") && t.path === path.join(Deno.cwd(), expr)) ||
+        // match tasks foo
+        path.resolve(root, expr) === t.path
+      );
+    });
+
+    let cmd = args._[1] as string | undefined;
+    if (!mod) {
+      const ctx = findModuleWithCmd(modules, context, expr);
+      if (!ctx) {
+        console.error(
+          chalk.red(`[wsr:err] module or task not found for "${expr}"`),
+        );
+        Deno.exit(1);
+      }
+      if (ctx.mod.type === "mixed") {
+        debug(`task = ${ctx.mod.pkgName ?? "<root>"}#${expr}`);
+      }
+
+      mod = ctx.mod;
+      cmd = ctx.cmd;
+    }
+
+    // print target tasks
+    if (!cmd) {
+      const isUniqueDirname =
+        modules.filter((t) => t.shortName === mod!.shortName).length === 1;
+      const longest = Object.keys(
+        (mod.type === "mixed" ? mod.npmScripts : mod.denoTasks) ?? [],
+      ).reduce((a, b) => (a.length > b.length ? a : b));
+      printModuleScripts(root, mod, isUniqueDirname, longest);
+      Deno.exit(0);
+    }
+
+    const mixed = !!(mod.npmScripts?.[cmd] && mod.denoTasks?.[cmd]);
+    if (mixed) {
+      console.error(
+        chalk.red("[wsr:err]"),
+        `"${cmd}" is duprecated in both deno.json(c) and package.json`,
+      );
+      Deno.exit(1);
+    }
+
+    if (mod.npmScripts?.[cmd]) {
+      const npmClient = await getPackageManager(root);
+      cd(mod.path);
+      const out = await $`${npmClient} run ${cmd}`;
+      Deno.exit(out.exitCode ?? 0);
+    }
+    if (mod.denoTasks?.[cmd]) {
+      cd(mod.path);
+      const out = await $`deno task ${cmd}`;
+      Deno.exit(out.exitCode ?? 0);
+    }
+    console.error(chalk.red(`[wsr:err] task not found ${cmd}`));
+    Deno.exit(1);
+  } else {
+    const longest = modules
+      .flatMap((info) => [
+        ...Object.keys(info.npmScripts ?? []),
+        ...Object.keys(info.denoTasks ?? []),
+      ])
+      .reduce((a, b) => (a.length > b.length ? a : b));
+    // console.log(longest);
+    for (const task of modules) {
+      const isUnique =
+        modules.filter((t) => t.shortName === task.shortName).length === 1;
+      printModuleScripts(root, task, isUnique, longest);
+    }
   }
 }
