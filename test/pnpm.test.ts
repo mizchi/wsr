@@ -9,7 +9,6 @@ const FIXTURE_DIR = "test/pnpm-fixture";
 const WSR = join(cwd, "wsr.ts");
 
 function normalize(str: string) {
-  // console.log("[norm]", cwd, str.replaceAll(cwd, "<proj>"));
   return str.replaceAll(cwd, "<PROJ>").trim();
 }
 

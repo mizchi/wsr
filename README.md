@@ -3,7 +3,7 @@
 npm-scripts and deno-tasks runner for workspace
 
 ```bash
-deno install -A wsr.ts
+deno install -A https://raw.githubusercontent.com/mizchi/wsr/main/wsr.ts -f
 ```
 
 ## Usage

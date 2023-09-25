@@ -1,12 +1,10 @@
 #!/usr/bin/env -S deno run -A --ext ts
-import { $, YAML, chalk, glob } from "npm:zx@7.1.1";
-import { cd } from "npm:zx@7.1.1";
+import { $, YAML, cd, chalk, glob } from "npm:zx@7.1.1";
 import { parse } from "https://deno.land/std@0.202.0/flags/mod.ts";
 import { expandGlobSync } from "https://deno.land/std@0.202.0/fs/expand_glob.ts";
 import * as path from "https://deno.land/std@0.202.0/path/mod.ts";
 
 type ModuleInfo = {
-  type: "mixed" | "deno";
   path: string;
   shortName: string;
   pkgName?: string;
@@ -222,7 +220,6 @@ async function getDenoModuleInfos(root: string, npmModuleInfos: ModuleInfo[]) {
     if (npmModuleInfos.find((t) => t.path === mod)) continue;
 
     const info: ModuleInfo = {
-      type: "deno",
       path: mod,
       shortName: path.basename(mod),
       denoTasks: undefined,
@@ -247,7 +244,6 @@ async function getNpmModuleInfos(root: string) {
   const infos: ModuleInfo[] = [];
   for (const mod of mods) {
     const info: ModuleInfo = {
-      type: "mixed",
       path: mod,
       shortName: path.basename(mod),
       pkgName: undefined,
@@ -270,7 +266,6 @@ async function getNpmModuleInfos(root: string) {
   // add root tasks
   if (await existsNpmPackage(root)) {
     const info: ModuleInfo = {
-      type: "mixed",
       path: root,
       shortName: "root",
       pkgName: undefined,
@@ -401,7 +396,7 @@ function printModuleScripts(
   if (expr) {
     let mod = modules.find((t) => {
       return (
-        (t.type === "mixed" && t.pkgName === expr) ||
+        t.pkgName === expr ||
         // match tasks foo
         t.shortName === expr ||
         // match: tasks ./foo or ../foos
@@ -420,9 +415,7 @@ function printModuleScripts(
         );
         Deno.exit(1);
       }
-      if (ctx.mod.type === "mixed") {
-        debug(`task = ${ctx.mod.pkgName ?? "<root>"}#${expr}`);
-      }
+      debug(`task = ${ctx.mod.pkgName ?? "<root>"}#${expr}`);
 
       mod = ctx.mod;
       cmd = ctx.cmd;
@@ -432,9 +425,10 @@ function printModuleScripts(
     if (!cmd) {
       const isUniqueDirname =
         modules.filter((t) => t.shortName === mod!.shortName).length === 1;
-      const longest = Object.keys(
-        (mod.type === "mixed" ? mod.npmScripts : mod.denoTasks) ?? [],
-      ).reduce((a, b) => (a.length > b.length ? a : b));
+      const longest = [
+        ...Object.keys(mod.npmScripts ?? {}),
+        ...Object.keys(mod.denoTasks ?? {}),
+      ].reduce((a, b) => (a.length > b.length ? a : b));
       printModuleScripts(root, mod, isUniqueDirname, longest);
       Deno.exit(0);
     }
