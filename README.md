@@ -140,8 +140,7 @@ $ cd mod && wsr root run # ng
 
 ## TODO
 
-- [ ] deno root
-- [ ] Makefile support
+- [ ] deno root detection
 
 ## Contirbute
 
