@@ -21,6 +21,7 @@ Examples:
   $ wsr foo           # list scripts in packages/foo
     foo [@pkg/foo] <root>/packages/foo
       test $ vitest --run src
+  $ wsr echo -- a b c # passing args to script
 
   $ wsr packages/foo test         # run script in packages/foo
   $ cd packages && wsr ./foo test # run script in relative target
