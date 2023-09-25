@@ -3,7 +3,9 @@
     "enable": false
   },
   "tasks": {
-    "test-pnpm": "cd fixture && pnpm install && cd .. && deno test -A pnpm.test.ts",
-    "test-npm": "cd npm-fixture && npm install && cd .. && deno test -A npm.test.ts"
+    "test": "deno task test-pnpm && deno task test-npm && deno task test-single",
+    "test-pnpm": "cd test/pnpm-fixture && pnpm install && cd ../.. && deno test -A test/pnpm.test.ts",
+    "test-npm": "cd test/npm-fixture && npm install && cd ../.. && deno test -A test/npm.test.ts",
+    "test-single": "deno test -A test/single.test.ts"
   }
 }

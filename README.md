@@ -1,6 +1,6 @@
-# wsrun
+# wsr
 
-context npm scripts helper for workspaces by deno.
+npm scripts helper for workspace by deno.
 
 ```bash
 deno install -A wsr.ts
@@ -51,7 +51,7 @@ foo [@pkg/foo] <root>/packages/foo
   test $ exit 0
 
 >>> wsr foo test 
-$ cd /Users/kotaro.chikuba/mizchi/wsr/fixture/packages/foo
+$ cd /Users/mizchi/mizchi/wsr/fixture/packages/foo
 $ npm run test
 
 > test
@@ -59,20 +59,20 @@ $ npm run test
 
 >>> cd packages/foo
 $ wsr test
-$ cd /Users/kotaro.chikuba/mizchi/wsr/fixture/packages/foo
+$ cd /Users/mizchi/mizchi/wsr/fixture/packages/foo
 $ npm run test
 
 > test
 > exit 0
 
 >>> wsr bar test && wsr test
-$ cd /Users/kotaro.chikuba/mizchi/wsr/fixture/packages/bar
+$ cd /Users/mizchi/mizchi/wsr/fixture/packages/bar
 $ npm run test
 
 > test
 > exit 0
 
-$ cd /Users/kotaro.chikuba/mizchi/wsr/fixture/packages/foo
+$ cd /Users/mizchi/mizchi/wsr/fixture/packages/foo
 $ npm run test
 
 > test
@@ -83,6 +83,11 @@ $ npm run test
 
 - use `packageManager` field in workspace-root's `package.json` to run `<npmClient> run ...`
 - require `workspaces` field in workspace-root's `package.json` or `pnpm-workspace.yaml`
+
+## TODO
+
+- [ ] deno task support
+- [ ] Makefile support
 
 ## LICENSE
 
