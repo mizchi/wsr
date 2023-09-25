@@ -1,0 +1,6 @@
+{
+  "name": "@pkg/foo",
+  "scripts": {
+    "test": "exit 0"
+  }
+}

@@ -1,0 +1,15 @@
+{
+  "name": "example",
+  "version": "1.0.0",
+  "packageManager": "pnpm@8.6.12",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "pnpm test:foo && pnpm test:bar",
+    "test:foo": "cd packages/foo && pnpm test",
+    "test:bar": "cd packages/bar && pnpm test"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC"
+}

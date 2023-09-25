@@ -1,0 +1,9 @@
+{
+  "lint": {
+    "enable": false
+  },
+  "tasks": {
+    "test-pnpm": "cd fixture && pnpm install && cd .. && deno test -A pnpm.test.ts",
+    "test-npm": "cd npm-fixture && npm install && cd .. && deno test -A npm.test.ts"
+  }
+}
