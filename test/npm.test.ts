@@ -10,11 +10,11 @@ Deno.test("list all tasks", async () => {
   const out = await $`deno run -A ../../wsr.ts`.quiet();
   assertEquals(
     out.stdout.trim(),
-    `bar [@pkg/bar] <root>/packages/bar
+    `📦 bar [@pkg/bar] <root>/packages/bar
   test     $ exit 0
-foo [@pkg/foo] <root>/packages/foo
+📦 foo [@pkg/foo] <root>/packages/foo
   test     $ exit 0
-root [example] <root>/
+📦 root [example] <root>/
   test     $ pnpm test:foo && pnpm test:bar
   test:foo $ cd packages/foo && pnpm test
   test:bar $ cd packages/bar && pnpm test`,
