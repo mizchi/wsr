@@ -99,19 +99,22 @@ async function findContextModule(cwd: string): Promise<string | void> {
 
 function findModuleWithCmd(
   modules: ModuleInfo[],
-  contextPath: string | void,
-  cmd: string,
-): Context | void {
-  const contextMod = modules.find((t) => t.path === contextPath);
-  if (contextMod?.npmScripts?.[cmd] || contextMod?.denoTasks?.[cmd]) {
-    return { mod: contextMod, cmd: cmd };
+  context: string | void,
+  expr: string,
+): Context {
+  const contextMod = modules.find((t) => t.path === context);
+  const rootMod = modules.find((t) => t.root);
+
+  if (contextMod?.npmScripts?.[expr] || contextMod?.denoTasks?.[expr]) {
+    return { mod: contextMod, cmd: expr };
   }
 
-  const rootTask = modules.find((t) => t.root);
-  if (rootTask?.npmScripts?.[cmd] || rootTask?.denoTasks?.[cmd]) {
-    return { mod: rootTask, cmd: cmd };
+  if (rootMod?.npmScripts?.[expr] || rootMod?.denoTasks?.[expr]) {
+    return { mod: rootMod, cmd: expr };
   }
-  return undefined;
+
+  console.error(chalk.red(`[wsr:err] module or task not found for "${expr}"`));
+  Deno.exit(1);
 }
 
 async function exists(path: string): Promise<boolean> {
@@ -383,8 +386,41 @@ async function runTask(
 }
 
 // ======== run =========
-function detectCmd(arg0: string, arg1: string | void) {}
-
+async function resolveContextMod(
+  root: string,
+  modules: ModuleInfo[],
+  context: string | void,
+  expr: string,
+) {
+  // let mod = modules.find((t) => {
+  //   return (
+  //     t.pkgName === expr ||
+  //     // match tasks foo
+  //     t.shortName === expr ||
+  //     // match: tasks ./foo or ../foos
+  //     (expr.startsWith(".") && t.path === path.join(Deno.cwd(), expr)) ||
+  //     // match tasks foo
+  //     path.resolve(root, expr) === t.path
+  //   );
+  // });
+  // // if (mod)
+  // if (!mod) {
+  //   const contextMod = modules.find((t) => t.path === context);
+  //   const rootMod = modules.find((t) => t.root);
+  //   if (contextMod?.npmScripts?.[expr] || contextMod?.denoTasks?.[expr]) {
+  //     mod = contextMod;
+  //     cmd = expr;
+  //   } else if (rootMod?.npmScripts?.[expr] || rootMod?.denoTasks?.[expr]) {
+  //     mod = rootMod;
+  //     cmd = expr;
+  //   } else {
+  //     console.error(
+  //       chalk.red(`[wsr:err] module or task not found for "${expr}"`),
+  //     );
+  //     Deno.exit(1);
+  //   }
+  // }
+}
 {
   if (argv.help || argv.h) {
     console.log(HELP);
@@ -393,12 +429,12 @@ function detectCmd(arg0: string, arg1: string | void) {}
   const expr = argv._[0] as string | undefined;
   let cmd = argv._[1] as string | undefined;
 
-  const rootMod = await findWorkspaceRoot(
+  const rootPath = await findWorkspaceRoot(
     Deno.cwd(),
     argv.root ?? argv.r ?? false,
   );
   const context = await findContextModule(Deno.cwd());
-  const root = (rootMod ?? context) as string;
+  const root = (rootPath ?? context) as string;
 
   if (!root) {
     console.error(chalk.red("[wsr:err] module not found"));
@@ -429,18 +465,21 @@ function detectCmd(arg0: string, arg1: string | void) {}
     );
   });
 
-  // find root task if module not found
   if (!mod) {
-    const ctx = findModuleWithCmd(modules, context, expr);
-    if (!ctx) {
+    const contextMod = modules.find((t) => t.path === context);
+    const rootMod = modules.find((t) => t.root);
+    if (contextMod?.npmScripts?.[expr] || contextMod?.denoTasks?.[expr]) {
+      mod = contextMod;
+      cmd = expr;
+    } else if (rootMod?.npmScripts?.[expr] || rootMod?.denoTasks?.[expr]) {
+      mod = rootMod;
+      cmd = expr;
+    } else {
       console.error(
         chalk.red(`[wsr:err] module or task not found for "${expr}"`),
       );
       Deno.exit(1);
     }
-    debug(`task = ${ctx.mod.pkgName ?? "<root>"}#${expr}`);
-    mod = ctx.mod;
-    cmd = ctx.cmd;
   }
 
   if (!cmd) {
