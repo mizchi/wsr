@@ -1,8 +1,5 @@
 #!/usr/bin/env -S deno run -A --ext ts
-import { $, YAML, cd, chalk, glob } from "npm:zx@7.1.1";
-import { parse } from "https://deno.land/std@0.202.0/flags/mod.ts";
-import { expandGlobSync } from "https://deno.land/std@0.202.0/fs/expand_glob.ts";
-import * as path from "https://deno.land/std@0.202.0/path/mod.ts";
+import { path, $, YAML, argv, cd, chalk, glob } from "npm:zx@7.1.1";
 
 type ModuleInfo = {
   path: string;
@@ -16,6 +13,11 @@ type ModuleInfo = {
 type Context = {
   mod: ModuleInfo;
   cmd: string;
+};
+
+type DenoConfig = {
+  [key: string]: any;
+  tasks?: Record<string, string>;
 };
 
 const HELP = `
@@ -112,51 +114,6 @@ function findModuleWithCmd(
   return undefined;
 }
 
-async function findDenoModules(root: string) {
-  const files = await glob("**/deno.{json,jsonc}", {
-    cwd: root,
-  });
-  return files.map((file) => path.join(root, path.dirname(file)));
-}
-
-async function findNpmModules(root: string) {
-  if (await exists(path.join(root, "pnpm-workspace.yaml"))) {
-    const workspaces = YAML.parse(
-      await Deno.readTextFile(path.join(root, "pnpm-workspace.yaml")),
-    ) as {
-      packages?: string[];
-    };
-    return (
-      workspaces.packages?.flatMap((pkg) => {
-        return [...expandGlobSync(`${root}/${pkg}`)].map((file) => file.path);
-      }) ?? []
-    );
-  }
-
-  if (await existsNpmPackage(root)) {
-    const pkg = JSON.parse(
-      await Deno.readTextFile(path.join(root, "package.json")),
-    ) as {
-      workspaces?:
-        | string[]
-        | {
-            packages?: string[];
-          };
-    };
-    const packages =
-      pkg.workspaces && Array.isArray(pkg.workspaces)
-        ? pkg.workspaces
-        : pkg.workspaces?.packages;
-    return (
-      packages?.flatMap((pkg) => {
-        return [...expandGlobSync(`${root}/${pkg}`)].map((file) => file.path);
-      }) ?? []
-    );
-  }
-
-  return [];
-}
-
 async function exists(path: string): Promise<boolean> {
   return await Deno.stat(path)
     .then(() => true)
@@ -185,23 +142,6 @@ async function getPkgJson(modPath: string) {
   return pkg;
 }
 
-type DenoConfig = {
-  tasks?: Record<string, string>;
-};
-async function getDenoConfig(modPath: string) {
-  let denoConfig: DenoConfig | undefined = undefined;
-  if (await exists(path.join(modPath, "deno.json"))) {
-    denoConfig = JSON.parse(
-      await Deno.readTextFile(path.join(modPath, "deno.json")),
-    ) as DenoConfig;
-  } else if (await exists(path.join(modPath, "deno.jsonc"))) {
-    denoConfig = JSON.parse(
-      await Deno.readTextFile(path.join(modPath, "deno.jsonc")),
-    ) as DenoConfig;
-  }
-  return denoConfig;
-}
-
 async function getPackageManager(root: string) {
   if (await exists(path.join(root, "package.json"))) {
     const pkg = await getPkgJson(root);
@@ -213,176 +153,257 @@ async function getPackageManager(root: string) {
   return "npm";
 }
 
-async function getDenoModuleInfos(root: string, npmModuleInfos: ModuleInfo[]) {
-  const infos: ModuleInfo[] = [];
-  const denoMods = await findDenoModules(root);
-  for (const mod of denoMods) {
-    // if (npmModules.includes(mod)) continue;
-    if (npmModuleInfos.find((t) => t.path === mod)) continue;
+async function getModules(root: string): Promise<ModuleInfo[]> {
+  const mods = await getNpmModules(root);
+  const denoMods = await getDenoModules(root, mods);
+  return [...mods, ...denoMods];
 
-    const info: ModuleInfo = {
-      path: mod,
-      shortName: path.basename(mod),
-      denoTasks: undefined,
-    };
-    if (await existsDenoConfig(mod)) {
-      const denoConfig = await getDenoConfig(mod);
-      if (denoConfig?.tasks) info.denoTasks = denoConfig.tasks;
-    }
-    if (await existsNpmPackage(mod)) {
-      const pkg = await getPkgJson(mod);
-      if (pkg.name) info.pkgName = pkg.name;
-      if (pkg.scripts) info.npmScripts = pkg.scripts;
-    }
-    infos.push(info);
-  }
-  return infos.sort((a, b) => a.shortName.localeCompare(b.shortName));
-}
-
-async function getNpmModuleInfos(root: string) {
-  const mods = await findNpmModules(root);
-
-  const infos: ModuleInfo[] = [];
-  for (const mod of mods) {
-    const info: ModuleInfo = {
-      path: mod,
-      shortName: path.basename(mod),
-      pkgName: undefined,
-      npmScripts: undefined,
-      denoTasks: undefined,
-    };
-    if (await existsNpmPackage(mod)) {
-      const pkg = await getPkgJson(mod);
-      if (pkg.scripts) info.npmScripts = pkg.scripts;
-      if (pkg.name) info.pkgName = pkg.name;
-    }
-    if (await existsDenoConfig(mod)) {
-      const denoConfig = await getDenoConfig(mod);
-      if (denoConfig?.tasks) info.denoTasks = denoConfig.tasks;
-    }
-
-    infos.push(info);
+  async function resolveDenoModules(root: string) {
+    const files = await glob("**/deno.{json,jsonc}", {
+      cwd: root,
+    });
+    return files.map((file) => path.join(root, path.dirname(file)));
   }
 
-  // add root tasks
-  if (await existsNpmPackage(root)) {
-    const info: ModuleInfo = {
-      path: root,
-      shortName: "root",
-      pkgName: undefined,
-      npmScripts: undefined,
-      denoTasks: undefined,
-      root: true,
+  function createGlob(root: string) {
+    return (pattern: string) => {
+      if (pattern.includes("*")) {
+        return glob
+          .globbySync(pattern, { cwd: root, onlyDirectories: true })
+          .sort()
+          .map((file) => path.join(root, file));
+      } else {
+        return [path.join(root, pattern)];
+      }
     };
+  }
+
+  async function getDenoModules(root: string, npmModuleInfos: ModuleInfo[]) {
+    const infos: ModuleInfo[] = [];
+    const denoMods = await resolveDenoModules(root);
+    for (const mod of denoMods) {
+      if (npmModuleInfos.find((t) => t.path === mod)) continue;
+
+      const info: ModuleInfo = {
+        path: mod,
+        shortName: path.basename(mod),
+        denoTasks: undefined,
+      };
+      if (await existsDenoConfig(mod)) {
+        const denoConfig = await readDenoJson(mod);
+        if (denoConfig?.tasks) info.denoTasks = denoConfig.tasks;
+      }
+      if (await existsNpmPackage(mod)) {
+        const pkg = await getPkgJson(mod);
+        if (pkg.name) info.pkgName = pkg.name;
+        if (pkg.scripts) info.npmScripts = pkg.scripts;
+      }
+      infos.push(info);
+    }
+    return infos.sort((a, b) => a.shortName.localeCompare(b.shortName));
+  }
+
+  async function getNpmModules(root: string) {
+    const mods = await resolveNpmModules(root);
+
+    const infos: ModuleInfo[] = [];
+    for (const mod of mods) {
+      const info: ModuleInfo = {
+        path: mod,
+        shortName: path.basename(mod),
+        pkgName: undefined,
+        npmScripts: undefined,
+        denoTasks: undefined,
+      };
+      if (await existsNpmPackage(mod)) {
+        const pkg = await getPkgJson(mod);
+        if (pkg.scripts) info.npmScripts = pkg.scripts;
+        if (pkg.name) info.pkgName = pkg.name;
+      }
+      if (await existsDenoConfig(mod)) {
+        const denoConfig = await readDenoJson(mod);
+        if (denoConfig?.tasks) info.denoTasks = denoConfig.tasks;
+      }
+
+      infos.push(info);
+    }
+
+    // add root tasks
+    if (await existsNpmPackage(root)) {
+      const info: ModuleInfo = {
+        path: root,
+        shortName: "root",
+        pkgName: undefined,
+        npmScripts: undefined,
+        denoTasks: undefined,
+        root: true,
+      };
+
+      if (await existsNpmPackage(root)) {
+        const pkg = await getPkgJson(root);
+        if (pkg.scripts) info.npmScripts = pkg.scripts;
+        if (pkg.name) info.pkgName = pkg.name;
+      }
+      if (await existsDenoConfig(root)) {
+        const denoConfig = await readDenoJson(root);
+        if (denoConfig?.tasks) info.denoTasks = denoConfig.tasks;
+      }
+      infos.push(info);
+    }
+    return infos.sort((a, b) => a.shortName.localeCompare(b.shortName));
+  }
+
+  async function resolveNpmModules(root: string) {
+    if (await exists(path.join(root, "pnpm-workspace.yaml"))) {
+      const workspaces = YAML.parse(
+        await Deno.readTextFile(path.join(root, "pnpm-workspace.yaml")),
+      ) as {
+        packages?: string[];
+      };
+      return workspaces.packages?.flatMap(createGlob(root)) ?? [];
+    }
 
     if (await existsNpmPackage(root)) {
-      const pkg = await getPkgJson(root);
-      if (pkg.scripts) info.npmScripts = pkg.scripts;
-      if (pkg.name) info.pkgName = pkg.name;
+      const pkg = JSON.parse(
+        await Deno.readTextFile(path.join(root, "package.json")),
+      ) as {
+        workspaces?:
+          | string[]
+          | {
+              packages?: string[];
+            };
+      };
+      const packages =
+        pkg.workspaces && Array.isArray(pkg.workspaces)
+          ? pkg.workspaces
+          : pkg.workspaces?.packages;
+      return packages?.flatMap(createGlob(root)) ?? [];
     }
-    if (await existsDenoConfig(root)) {
-      const denoConfig = await getDenoConfig(root);
-      if (denoConfig?.tasks) info.denoTasks = denoConfig.tasks;
-    }
-    const pkg = await getPkgJson(root);
-    // if (pkg.scripts) info.npmScripts = pkg.scripts;
-    info.pkgName = pkg.name ?? "root";
-    infos.push(info);
+
+    return [];
   }
-  return infos.sort((a, b) => a.shortName.localeCompare(b.shortName));
+
+  async function readDenoJson(modPath: string) {
+    if (await exists(path.join(modPath, "deno.json"))) {
+      return JSON.parse(
+        await Deno.readTextFile(path.join(modPath, "deno.json")),
+      ) as DenoConfig;
+    } else if (await exists(path.join(modPath, "deno.jsonc"))) {
+      return JSON.parse(
+        await Deno.readTextFile(path.join(modPath, "deno.jsonc")),
+      ) as DenoConfig;
+    }
+    return undefined;
+  }
 }
 
-function printModuleScripts(
-  root: string,
-  info: ModuleInfo,
-  isUniqueShortName: boolean,
-  longest: string,
+function printModuleScripts(root: string, modules: ModuleInfo[]) {
+  const longest = modules
+    .flatMap((info) => [
+      ...Object.keys(info.npmScripts ?? []),
+      ...Object.keys(info.denoTasks ?? []),
+    ])
+    .reduce((a, b) => (a.length > b.length ? a : b));
+
+  for (const info of modules) {
+    const isUniqueDirname =
+      modules.filter((t) => t.shortName === info!.shortName).length === 1;
+
+    const pkgPrefix =
+      info.npmScripts && info.denoTasks
+        ? "[Mixed] "
+        : info.npmScripts
+        ? "📦 "
+        : info.denoTasks
+        ? "🦕 "
+        : "";
+
+    if (isUniqueDirname) {
+      const relativePath = path.relative(root, info.path);
+      const pkgExpr =
+        info.pkgName === info.shortName
+          ? info.shortName
+          : `${info.shortName}${info.pkgName ? ` [${info.pkgName}]` : ""}`;
+      console.log(`${pkgPrefix}${pkgExpr} <root>/${relativePath}`);
+    } else {
+      const relativePath = path.relative(root, info.path);
+      console.log(`${pkgPrefix}${relativePath}`);
+    }
+
+    const tasks = [
+      ...Object.entries(info.npmScripts ?? {}),
+      ...Object.entries(info.denoTasks ?? {}),
+    ];
+    for (const [name, cmd] of tasks) {
+      const parentMixed = !!(info.npmScripts && info.denoTasks);
+      const taskMixed = !!(info.npmScripts?.[name] && info.denoTasks?.[name]);
+
+      const prefix = taskMixed
+        ? "🔥 "
+        : info.npmScripts?.[name] && parentMixed
+        ? "📦 "
+        : info.denoTasks?.[name] && parentMixed
+        ? "🦕 "
+        : "";
+      const suffix = " ".repeat(longest.length - name.length);
+      console.log(`  ${prefix}${name}${suffix} $ ${cmd.trim()}`);
+    }
+  }
+}
+
+// run task
+async function runTask(
+  mod: ModuleInfo,
+  task: string,
+  npmClient: string,
+  passingArgs: string[],
 ) {
-  // const mixed = !!(info.npmScripts && info.denoTasks);
-  // if (info.type === "deno" && info.denoTasks) {
-  //   console.log(
-  //     `🦕 ${info.shortName} <root>/${path.relative(root, info.path)}`,
-  //   );
-  //   for (const [name, cmd] of Object.entries(info.denoTasks)) {
-  //     const spaces = " ".repeat(longest.length - name.length);
-  //     console.log(`  ${name}${spaces} $ ${cmd.trim()}`);
-  //   }
-  // }
-
-  // if (info.type === "mixed") {
-  const pkgPrefix =
-    info.npmScripts && info.denoTasks
-      ? "[Mixed] "
-      : info.npmScripts
-      ? "📦 "
-      : info.denoTasks
-      ? "🦕 "
-      : "";
-
-  const cmdPrefix = (info: ModuleInfo, task: string) => {
-    const parentMixed = !!(info.npmScripts && info.denoTasks);
-    const taskMixed = !!(info.npmScripts?.[task] && info.denoTasks?.[task]);
-    return taskMixed
-      ? "🔥 "
-      : info.npmScripts?.[task] && parentMixed
-      ? "📦 "
-      : info.denoTasks?.[task] && parentMixed
-      ? "🦕 "
-      : "";
-  };
-
-  const cmdSuffix = (name: string) => " ".repeat(longest.length - name.length);
-
-  if (isUniqueShortName) {
-    const relativePath = path.relative(root, info.path);
-    const pkgExpr =
-      info.pkgName === info.shortName
-        ? info.shortName
-        : `${info.shortName}${info.pkgName ? ` [${info.pkgName}]` : ""}`;
-    console.log(`${pkgPrefix}${pkgExpr} <root>/${relativePath}`);
-  } else {
-    const relativePath = path.relative(root, info.path);
-    console.log(`${pkgPrefix}${relativePath}`);
-  }
-
-  // if (info.npmScripts) {
-  const tasks = [
-    ...Object.entries(info.npmScripts ?? {}),
-    ...Object.entries(info.denoTasks ?? {}),
-  ];
-  for (const [name, cmd] of tasks) {
-    console.log(
-      `  ${cmdPrefix(info, name)}${name}${cmdSuffix(name)} $ ${cmd.trim()}`,
+  Deno.env.set("FORCE_COLOR", "1");
+  const mixed = !!(mod.npmScripts?.[task] && mod.denoTasks?.[task]);
+  if (mixed) {
+    console.error(
+      chalk.red("[wsr:err]"),
+      `"${task}" is duprecated in both deno.json(c) and package.json`,
     );
+    Deno.exit(1);
   }
+
+  if (mod.npmScripts?.[task]) {
+    cd(mod.path);
+    const out = await $`${npmClient} run ${task} ${passingArgs}`;
+    Deno.exit(out.exitCode ?? 0);
+  }
+  if (mod.denoTasks?.[task]) {
+    cd(mod.path);
+    const out = await $`deno task ${task} ${passingArgs}`;
+    Deno.exit(out.exitCode ?? 0);
+  }
+  console.error(chalk.red(`[wsr:err] task not found ${task}`));
+  Deno.exit(1);
 }
 
 // ======== run =========
-{
-  const args = parse(Deno.args);
+function detectCmd(arg0: string, arg1: string | void) {}
 
-  if (args.help || args.h) {
+{
+  if (argv.help || argv.h) {
     console.log(HELP);
     Deno.exit(0);
   }
-  const expr = args._[0] as string | undefined;
-  const root_ = await findWorkspaceRoot(
+  const expr = argv._[0] as string | undefined;
+  let cmd = argv._[1] as string | undefined;
+
+  const rootMod = await findWorkspaceRoot(
     Deno.cwd(),
-    args.root ?? args.r ?? false,
+    argv.root ?? argv.r ?? false,
   );
-
   const context = await findContextModule(Deno.cwd());
-
-  const root = (root_ ?? context) as string;
+  const root = (rootMod ?? context) as string;
 
   if (!root) {
     console.error(chalk.red("[wsr:err] module not found"));
     Deno.exit(1);
   }
-
-  const npmModules = await getNpmModuleInfos(root);
-  const denoModules = await getDenoModuleInfos(root, npmModules);
-  const modules: ModuleInfo[] = [...npmModules, ...denoModules];
 
   debug(`root = ${root.replace(Deno.env.get("HOME")!, "~")}`);
   if (root !== context) {
@@ -391,88 +412,45 @@ function printModuleScripts(
     debug("context = .");
   }
 
-  if (!args.noColor) {
-    Deno.env.set("FORCE_COLOR", "1");
+  const modules = await getModules(root);
+  if (!expr) {
+    printModuleScripts(root, modules);
+    Deno.exit(0);
   }
+  let mod = modules.find((t) => {
+    return (
+      t.pkgName === expr ||
+      // match tasks foo
+      t.shortName === expr ||
+      // match: tasks ./foo or ../foos
+      (expr.startsWith(".") && t.path === path.join(Deno.cwd(), expr)) ||
+      // match tasks foo
+      path.resolve(root, expr) === t.path
+    );
+  });
 
-  if (expr) {
-    let mod = modules.find((t) => {
-      return (
-        t.pkgName === expr ||
-        // match tasks foo
-        t.shortName === expr ||
-        // match: tasks ./foo or ../foos
-        (expr.startsWith(".") && t.path === path.join(Deno.cwd(), expr)) ||
-        // match tasks foo
-        path.resolve(root, expr) === t.path
-      );
-    });
-
-    let cmd = args._[1] as string | undefined;
-    if (!mod) {
-      const ctx = findModuleWithCmd(modules, context, expr);
-      if (!ctx) {
-        console.error(
-          chalk.red(`[wsr:err] module or task not found for "${expr}"`),
-        );
-        Deno.exit(1);
-      }
-      debug(`task = ${ctx.mod.pkgName ?? "<root>"}#${expr}`);
-
-      mod = ctx.mod;
-      cmd = ctx.cmd;
-    }
-
-    // print target tasks
-    if (!cmd) {
-      const isUniqueDirname =
-        modules.filter((t) => t.shortName === mod!.shortName).length === 1;
-      const longest = [
-        ...Object.keys(mod.npmScripts ?? {}),
-        ...Object.keys(mod.denoTasks ?? {}),
-      ].reduce((a, b) => (a.length > b.length ? a : b));
-      printModuleScripts(root, mod, isUniqueDirname, longest);
-      Deno.exit(0);
-    }
-
-    const mixed = !!(mod.npmScripts?.[cmd] && mod.denoTasks?.[cmd]);
-    if (mixed) {
+  // find root task if module not found
+  if (!mod) {
+    const ctx = findModuleWithCmd(modules, context, expr);
+    if (!ctx) {
       console.error(
-        chalk.red("[wsr:err]"),
-        `"${cmd}" is duprecated in both deno.json(c) and package.json`,
+        chalk.red(`[wsr:err] module or task not found for "${expr}"`),
       );
       Deno.exit(1);
     }
-
-    const passingSplitter = Deno.args.findIndex((arg) => arg === "--");
-    const passingArgs =
-      passingSplitter > -1 ? Deno.args.slice(passingSplitter + 1) : [];
-
-    if (mod.npmScripts?.[cmd]) {
-      const npmClient = await getPackageManager(root);
-      cd(mod.path);
-      const out = await $`${npmClient} run ${cmd} ${passingArgs}`;
-      Deno.exit(out.exitCode ?? 0);
-    }
-    if (mod.denoTasks?.[cmd]) {
-      cd(mod.path);
-      const out = await $`deno task ${cmd} ${passingArgs}`;
-      Deno.exit(out.exitCode ?? 0);
-    }
-    console.error(chalk.red(`[wsr:err] task not found ${cmd}`));
-    Deno.exit(1);
-  } else {
-    const longest = modules
-      .flatMap((info) => [
-        ...Object.keys(info.npmScripts ?? []),
-        ...Object.keys(info.denoTasks ?? []),
-      ])
-      .reduce((a, b) => (a.length > b.length ? a : b));
-    // console.log(longest);
-    for (const task of modules) {
-      const isUnique =
-        modules.filter((t) => t.shortName === task.shortName).length === 1;
-      printModuleScripts(root, task, isUnique, longest);
-    }
+    debug(`task = ${ctx.mod.pkgName ?? "<root>"}#${expr}`);
+    mod = ctx.mod;
+    cmd = ctx.cmd;
   }
+
+  if (!cmd) {
+    printModuleScripts(root, [mod]);
+    Deno.exit(0);
+  }
+
+  const npmClient = await getPackageManager(root);
+  const passingSplitter = Deno.args.findIndex((arg) => arg === "--");
+  const passingArgs =
+    passingSplitter > -1 ? Deno.args.slice(passingSplitter + 1) : [];
+  await runTask(mod, cmd, npmClient, passingArgs);
 }
